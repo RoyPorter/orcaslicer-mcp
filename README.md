@@ -28,6 +28,8 @@ On a multi-filament setup, per-filament keys are read merged across every loaded
 
 `list_presets`, `select_preset`, `get_preset_config`, `edit_preset`, `save_preset`, `rename_preset`, `delete_preset`. `select_preset` discards unsaved overrides in every group, not only the one switched; see [docs/order-of-operations.md](docs/order-of-operations.md).
 
+`select_preset` with `filament` changes the preset open in the Filament tab. The project's filament slots, the rows on the Prepare page that per-object `extruder` numbers refer to, are a different thing: `list_filament_slots` shows them and `set_slot_filament` assigns a preset (user presets included) and a colour to a slot, leaving print and printer overrides alone. Needs fork v2.4.2-mcp.14 or later.
+
 ### Slicing, and reading the result back
 
 `slice`, `slice_and_wait`, `apply_and_slice`, `cancel_slice`, `get_slice_status`, `get_slice_warnings`, `get_gcode`.
@@ -73,6 +75,12 @@ It only crowns a winner when one variant genuinely beats the rest on time, filam
 ### Several plates
 
 `list_plates`, `add_plate`, `select_plate`, `delete_plate` and `move_object_to_plate` build a multi-plate project the way the toolbar does: one part per plate, each sliced on its own. Slicing, G-code, renders and job status always act on the current plate, so select a plate before you slice it. `list_objects` reports the plate each object sits on. Keep `arrange_plate` away from a layout like this: OrcaSlicer's arrange packs every unlocked plate together again. These need fork v2.4.2-mcp.13 or later.
+
+`set_plate` gives one plate its own bed type, name or print sequence, what the Plate Settings dialog writes, so PETG on an engineering plate and ASA on textured PEI can sit in one project without fighting over `curr_bed_type`. `list_plates` reports each plate's own setting and what it resolves to. Needs fork v2.4.2-mcp.14 or later.
+
+### Project files
+
+`save_project` writes the project as a `.3mf` exactly as File > Save does: plates, placement, per-object and per-plate settings, height ranges, slot presets and colours, unsaved overrides. It never replaces an existing file unless told to. `open_project` brings a saved project back as File > Open Project does (not a geometry import), and `new_project` starts over. OrcaSlicer's prompts ("save changes?", "keep modified presets?") would hang a remote caller, so each one is answered from an argument: `if_unsaved` is `fail` by default, so nothing is lost without being asked for. `get_status` reports `project` as `{name, path, dirty}`, so an agent knows when there is something to save. Needs fork v2.4.2-mcp.14 or later.
 
 ### Plate renders
 

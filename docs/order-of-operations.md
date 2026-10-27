@@ -64,6 +64,10 @@ it must survive, or, more simply, do the filament work first.
 4. `load_model`, then `set_object_config(id, {"extruder": N})` for each object.
 5. `slice_and_wait`, then `get_slice_warnings`.
 
+## Slot assignment is separate from the Filament tab
+
+On fork v2.4.2-mcp.14 and later, `set_slot_filament(slot, preset, colour)` assigns a preset to a project slot the way the Prepare page's dropdown does, and leaves unsaved print and printer overrides alone. `select_preset(type="filament")` changes the preset open in the Filament tab (and discards every group's overrides, as above). To put a user preset on slot 4, save it with `save_preset` first, then `set_slot_filament(4, "My LW-ASA")`; on a printer with a single slot the two coincide and `set_slot_filament` drops unsaved filament edits so the tab can follow (it reports them as `discarded_changes`).
+
 ## Related
 
 - `get_status` lists modified keys per group; a per-filament key shows as `key#slot`

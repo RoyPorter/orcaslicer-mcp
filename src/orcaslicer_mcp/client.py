@@ -51,6 +51,13 @@ class OrcaClient:
         presets = data.get("presets")
         if isinstance(presets, dict) and "filaments" in presets:
             presets["filament"] = presets.pop("filaments")
+        # Fork v2.4.2-mcp.14 adds project_name and project_dirty beside the path in
+        # `project`. Fold the three into one object so a caller sees name, path and
+        # dirty together; an older build keeps `project` as the bare path string.
+        if "project_dirty" in data:
+            data["project"] = {"name": data.pop("project_name", ""),
+                               "path": data.get("project") or "",
+                               "dirty": bool(data.pop("project_dirty"))}
         return data
 
     async def get_objects(self) -> dict:
@@ -139,6 +146,38 @@ class OrcaClient:
     async def set_object_plate(self, obj_id: int, plate: int, instance: int = 0) -> dict:
         return await self._request("POST", f"/api/v1/objects/{obj_id}/plate",
                                    json={"plate": plate, "instance": instance})
+
+    async def patch_plate(self, index: int, bed_type: str | None = None, name: str | None = None,
+                          print_sequence: str | None = None) -> dict:
+        body = {k: v for k, v in (("bed_type", bed_type), ("name", name),
+                                  ("print_sequence", print_sequence)) if v is not None}
+        return await self._request("PATCH", f"/api/v1/plates/{index}", json=body)
+
+    # Project file (fork v2.4.2-mcp.14 and later).
+    async def get_project(self) -> dict:
+        return await self._request("GET", "/api/v1/project")
+
+    async def save_project(self, path: str | None = None, overwrite: bool = False) -> dict:
+        # export_3mf renders a thumbnail per plate; the fork holds the request up to 120 s.
+        return await self._request("POST", "/api/v1/project/save",
+                                   json={"path": path, "overwrite": overwrite}, timeout=130.0)
+
+    async def open_project(self, path: str, if_unsaved: str = "fail", presets: str = "project") -> dict:
+        return await self._request("POST", "/api/v1/project/open",
+                                   json={"path": path, "if_unsaved": if_unsaved, "presets": presets},
+                                   timeout=130.0)
+
+    async def new_project(self, if_unsaved: str = "fail") -> dict:
+        return await self._request("POST", "/api/v1/project/new", json={"if_unsaved": if_unsaved},
+                                   timeout=70.0)
+
+    # Filament slots (fork v2.4.2-mcp.14 and later). Slots are 1-based, as the window numbers them.
+    async def get_filaments(self) -> dict:
+        return await self._request("GET", "/api/v1/filaments")
+
+    async def set_filament_slot(self, slot: int, preset: str | None = None, colour: str | None = None) -> dict:
+        body = {k: v for k, v in (("preset", preset), ("colour", colour)) if v is not None}
+        return await self._request("PUT", f"/api/v1/filaments/{slot}", json=body)
 
     async def get_config(self, keys: list[str] | None) -> dict:
         # The fork's /config `keys` filter splits the RAW query string on ',' without

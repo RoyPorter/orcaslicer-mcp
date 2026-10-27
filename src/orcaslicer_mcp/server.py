@@ -97,7 +97,11 @@ async def get_status() -> dict:
     last slice is still valid, and whether a slice is running. Read-only.
 
     Call it first to orient before slicing or editing, to see which settings drift from their
-    preset, or to check slice_result_valid before trusting earlier stats."""
+    preset, or to check slice_result_valid before trusting earlier stats. On fork
+    v2.4.2-mcp.14 and later `project` is {name, path, dirty}: path is empty until the project
+    has been saved, and dirty says File > Save has something to write, so an agent knows when
+    to save_project and when the user has been editing in the window. Older builds report
+    `project` as the bare path string."""
     try:
         async with _client() as c:
             return await c.get_status()
@@ -431,6 +435,10 @@ def _plates_err(e: ApiError) -> dict:
     return _m4_err(e, "fork v2.4.2-mcp.13 or later")
 
 
+def _project_err(e: ApiError) -> dict:
+    return _m4_err(e, "the project routes, fork v2.4.2-mcp.14 or later")
+
+
 @mcp.tool()
 async def list_objects() -> dict:
     """List objects in the project: id (stable), name, size_mm, transform (offset/rotation/scale)
@@ -529,7 +537,10 @@ async def list_plates() -> dict:
     (max) and whether one can be added or deleted right now. Read-only.
 
     Plate numbers shown in the OrcaSlicer window are 1-based; every tool here takes the
-    0-based index from this list. Needs fork v2.4.2-mcp.13 or later."""
+    0-based index from this list. Needs fork v2.4.2-mcp.13 or later. From fork
+    v2.4.2-mcp.14 each plate also reports its own bed_type and print_sequence ("default"
+    when it follows the project-wide setting) and what they resolve to (bed_type_effective,
+    print_sequence_effective); set_plate changes them."""
     try:
         async with _client() as c:
             return await c.get_plates()
@@ -618,6 +629,158 @@ async def move_object_to_plate(
             return await c.set_object_plate(object_id, plate, instance)
     except ApiError as e:
         return _plates_err(e)
+
+
+@mcp.tool()
+async def set_plate(
+    index: Annotated[int, Field(description=(
+        "0-based plate index from list_plates (the window shows plates 1-based)."))],
+    bed_type: Annotated[str | None, Field(description=(
+        "The plate's own bed type: 'Cool Plate', 'Engineering Plate', 'High Temp Plate', "
+        "'Textured PEI Plate', 'Textured Cool Plate' or 'Supertack Plate' (case does not "
+        "matter), or 'default' to follow the project-wide curr_bed_type again. None leaves "
+        "it alone."))] = None,
+    name: Annotated[str | None, Field(description=(
+        "A name for the plate, shown in the window and used in exported G-code file names. "
+        "None leaves it alone."))] = None,
+    print_sequence: Annotated[str | None, Field(description=(
+        "'by_layer', 'by_object', or 'default' to follow the print preset. None leaves it "
+        "alone."))] = None,
+) -> dict:
+    """Set one plate's own bed type, name and/or print sequence, what the Plate Settings
+    dialog writes. A per-plate bed type overrides the project-wide curr_bed_type for that
+    plate only, so a project can print PETG on an engineering plate on one plate and ASA on
+    textured PEI on another without the two fighting over set_config's curr_bed_type.
+
+    Only a real change is applied; the reply lists what changed and returns the plate as
+    list_plates shows it. A change marks that plate's slice stale (re-slice it) and the
+    project dirty. 'default' removes the override. Needs fork v2.4.2-mcp.14 or later."""
+    if bed_type is None and name is None and print_sequence is None:
+        return {"error": "nothing_to_set", "detail": "pass bed_type, name and/or print_sequence"}
+    try:
+        async with _client() as c:
+            return await c.patch_plate(index, bed_type=bed_type, name=name, print_sequence=print_sequence)
+    except ApiError as e:
+        return _project_err(e)
+
+
+@mcp.tool()
+async def list_filament_slots() -> dict:
+    """The project's filament slots as the Prepare page shows them: for each 1-based slot, the
+    filament preset assigned to it, its colour, the preset's filament type and whether it is a
+    system preset. Read-only. These slots are what per-object `extruder` numbers refer to.
+    Needs fork v2.4.2-mcp.14 or later."""
+    try:
+        async with _client() as c:
+            return await c.get_filaments()
+    except ApiError as e:
+        return _project_err(e)
+
+
+@mcp.tool()
+async def set_slot_filament(
+    slot: Annotated[int, Field(description=(
+        "1-based slot number, as the window numbers the filament rows and as "
+        "list_filament_slots reports them."))],
+    preset: Annotated[str | None, Field(description=(
+        "Exact name of a filament preset, user presets included (see list_presets). None "
+        "leaves the slot's preset alone."))] = None,
+    colour: Annotated[str | None, Field(description=(
+        "'#RRGGBB' or '#RRGGBBAA'. None keeps the current colour, except that a newly "
+        "assigned preset with its own default colour recolours the slot, as the dropdown "
+        "does."))] = None,
+) -> dict:
+    """Assign a filament preset and/or a colour to a project slot, as the slot's dropdown and
+    colour swatch on the Prepare page do. This is the way to put a preset on slot 2, 3 or 4;
+    select_preset only changes the preset open in the Filament tab.
+
+    Unlike select_preset it leaves unsaved print and printer overrides alone. On a printer
+    with a single filament slot the dropdown also moves the Filament tab to the preset, and
+    unsaved filament edits are dropped to allow that (reported as discarded_changes); with
+    several slots nothing is discarded. Every plate's slice goes stale, so re-slice. Unknown
+    preset names are rejected. Needs fork v2.4.2-mcp.14 or later."""
+    if preset is None and colour is None:
+        return {"error": "nothing_to_set", "detail": "pass preset and/or colour"}
+    try:
+        async with _client() as c:
+            return await c.set_filament_slot(slot, preset=preset, colour=colour)
+    except ApiError as e:
+        return _project_err(e)
+
+
+@mcp.tool()
+async def save_project(
+    path: Annotated[str | None, Field(description=(
+        "Where to save, a .3mf path on the OrcaSlicer host (Save As). None saves to the "
+        "project's own path (Save); that fails with no_project_path when the project has "
+        "never been saved."))] = None,
+    overwrite: Annotated[bool, Field(description=(
+        "Replace an existing file at `path`. Off by default: a collision is an error, "
+        "never a silent clobber. Saving the project back onto its own path is a plain "
+        "Save and needs no overwrite."))] = False,
+) -> dict:
+    """Save the project as a .3mf, exactly what File > Save / Save Project As writes: plates,
+    object placement, per-object and per-plate settings, height-range modifiers, slot presets
+    and colours, and unsaved config overrides. No dialog opens; OrcaSlicer's own prompts are
+    answered from the arguments.
+
+    Afterwards get_status reports the new path and dirty false. Save early: everything set
+    up through these tools lives only in the open session until it is saved, and is lost if
+    OrcaSlicer closes. A save is refused while a slice runs (slicing). Needs fork
+    v2.4.2-mcp.14 or later."""
+    try:
+        async with _client() as c:
+            return await c.save_project(path, overwrite)
+    except ApiError as e:
+        return _project_err(e)
+
+
+@mcp.tool()
+async def open_project(
+    path: Annotated[str, Field(description="A .3mf project on the OrcaSlicer host.")],
+    if_unsaved: Annotated[Literal["save", "discard", "fail"], Field(description=(
+        "What to do when the current project has unsaved changes: 'fail' (default) refuses "
+        "and changes nothing, 'save' writes it to its own path first (fails with "
+        "no_project_path if it has none), 'discard' throws the changes away."))] = "fail",
+    presets: Annotated[Literal["project", "keep_current"], Field(description=(
+        "'project' (default) selects the printer, print and filament presets stored in the "
+        "project, as OrcaSlicer does. 'keep_current' opens the project and then selects the "
+        "presets that were active before the call again (for names that still exist); the "
+        "project's own config overrides are not kept in that mode."))] = "project",
+) -> dict:
+    """Open a saved .3mf project the way File > Open Project does: plates, objects, per-object
+    and per-plate settings, slot presets and colours all come back. This is not load_model,
+    which only imports geometry onto the current plate.
+
+    The two prompts OrcaSlicer would show are answered from the arguments, so nothing blocks.
+    Unsaved preset overrides are dropped before the open because the project's config
+    replaces them; the reply names those groups in discarded_changes. Call get_status first
+    if you are unsure whether the user has unsaved work in the window, and pass
+    if_unsaved='save' or 'discard' deliberately. Needs fork v2.4.2-mcp.14 or later."""
+    try:
+        async with _client() as c:
+            return await c.open_project(path, if_unsaved, presets)
+    except ApiError as e:
+        return _project_err(e)
+
+
+@mcp.tool()
+async def new_project(
+    if_unsaved: Annotated[Literal["save", "discard", "fail"], Field(description=(
+        "What to do when the current project has unsaved changes: 'fail' (default) refuses "
+        "and changes nothing, 'save' writes it to its own path first (fails with "
+        "no_project_path if it has none), 'discard' throws the changes away."))] = "fail",
+) -> dict:
+    """Start a new, empty project (File > New Project) without a dialog. The unsaved-changes
+    prompt is answered by if_unsaved. OrcaSlicer's second prompt, keep or discard modified
+    presets, is answered with Keep: unsaved preset overrides carry over into the new project
+    and the reply names them in kept_changes (select_preset drops them if that is not
+    wanted). Needs fork v2.4.2-mcp.14 or later."""
+    try:
+        async with _client() as c:
+            return await c.new_project(if_unsaved)
+    except ApiError as e:
+        return _project_err(e)
 
 
 @mcp.tool()
@@ -894,7 +1057,11 @@ async def select_preset(
 
     This also makes it the canonical way to reset dirty config. It leaves the last slice
     invalid, so re-slice afterwards. Use list_presets for valid names. Because of this, make
-    filament selections and edits before print-group edits (docs/order-of-operations.md)."""
+    filament selections and edits before print-group edits (docs/order-of-operations.md).
+
+    For 'filament' this changes the preset open in the Filament tab, not which preset a
+    project slot uses: to put a preset on slot 2, 3 or 4 (or to set a slot's colour) use
+    set_slot_filament, which also leaves print and printer overrides alone."""
     try:
         async with _client() as c:
             return await c.select_preset(type, name)
@@ -1485,6 +1652,7 @@ _TOOL_ANNOTATIONS: dict[str, tuple[str, bool, bool]] = {
     "compare_slices": ("Compare slice variants", True, False),
     "list_objects": ("List plate objects", True, False),
     "list_plates": ("List plates", True, False),
+    "list_filament_slots": ("List filament slots", True, False),
     "get_job_status": ("Get background job status", True, False),
     "watch_events": ("Watch OrcaSlicer events", True, False),
     "find_config_keys": ("Find config keys", True, False),
@@ -1513,6 +1681,9 @@ _TOOL_ANNOTATIONS: dict[str, tuple[str, bool, bool]] = {
     "add_plate": ("Add plate", False, False),
     "select_plate": ("Select plate", False, False),
     "move_object_to_plate": ("Move object to plate", False, False),
+    "set_plate": ("Set plate bed type, name, print sequence", False, False),
+    "set_slot_filament": ("Assign a filament preset to a slot", False, False),
+    "save_project": ("Save project (.3mf)", False, False),
     "auto_orient": ("Auto-orient objects", False, False),
     "remember": ("Save a note", False, False),
     "load_model": ("Load a model file", False, False),
@@ -1524,6 +1695,8 @@ _TOOL_ANNOTATIONS: dict[str, tuple[str, bool, bool]] = {
     "edit_preset": ("Edit preset (overwrites stored settings)", False, True),
     "delete_object": ("Delete object from plate", False, True),
     "delete_plate": ("Delete plate (its objects are parked off-plate)", False, True),
+    "open_project": ("Open project (replaces the open session)", False, True),
+    "new_project": ("New project (replaces the open session)", False, True),
     "delete_preset": ("Delete preset", False, True),
     "get_printer_status": ("Get printer status", True, False),
     "wait_for_printer": ("Wait for the printer", True, False),

@@ -158,6 +158,30 @@
       "description": "Move an object onto another plate. Coming from a plate it keeps its position relative to that plate (front-left of plate 1 lands front-left of plate 2); coming from off-plate (parked beside the bed) it lands at the destination's centre."
     },
     {
+      "name": "set_plate",
+      "description": "Set one plate's own bed type, name and/or print sequence, what the Plate Settings dialog writes."
+    },
+    {
+      "name": "list_filament_slots",
+      "description": "The project's filament slots as the Prepare page shows them: for each 1-based slot, the filament preset assigned to it, its colour, the preset's filament type and whether it is a system preset. Read-only. These slots are what per-object `extruder` numbers refer to. Needs fork v2.4.2-mcp.14 or later."
+    },
+    {
+      "name": "set_slot_filament",
+      "description": "Assign a filament preset and/or a colour to a project slot, as the slot's dropdown and colour swatch on the Prepare page do. This is the way to put a preset on slot 2, 3 or 4; select_preset only changes the preset open in the Filament tab."
+    },
+    {
+      "name": "save_project",
+      "description": "Save the project as a .3mf, exactly what File > Save / Save Project As writes: plates, object placement, per-object and per-plate settings, height-range modifiers, slot presets and colours, and unsaved config overrides. No dialog opens; OrcaSlicer's own prompts are answered from the arguments."
+    },
+    {
+      "name": "open_project",
+      "description": "Open a saved .3mf project the way File > Open Project does: plates, objects, per-object and per-plate settings, slot presets and colours all come back. This is not load_model, which only imports geometry onto the current plate."
+    },
+    {
+      "name": "new_project",
+      "description": "Start a new, empty project (File > New Project) without a dialog. The unsaved-changes prompt is answered by if_unsaved."
+    },
+    {
       "name": "get_job_status",
       "description": "Whether the plate's background job worker is idle or still running. Read-only."
     },

@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Project files, for fork v2.4.2-mcp.14 and later. `save_project` writes the project `.3mf` as File > Save / Save As does, with no dialog, and refuses to replace an existing file unless `overwrite` is passed. `open_project` opens a saved project with its plates, objects, per-object and per-plate settings, slot presets and colours (`load_model` only imports geometry); `new_project` starts over. Both take `if_unsaved` (`fail` by default, `save`, `discard`) to answer OrcaSlicer's unsaved-changes prompt from the call, and `open_project` takes `presets` (`project` or `keep_current`). `get_status` reports `project` as `{name, path, dirty}` on those builds.
+- `set_plate` sets one plate's own bed type, name and print sequence, what the Plate Settings dialog writes, so plates in one project can use different beds. `list_plates` shows each plate's own setting and what it resolves to.
+- `list_filament_slots` and `set_slot_filament` read and assign the project's filament slots (preset and colour), the rows on the Prepare page that per-object `extruder` numbers refer to. `set_slot_filament` leaves unsaved print and printer overrides alone; `select_preset` now says that it changes the Filament tab's preset, not a slot.
+
 ## [0.1.17] - 2026-10-12
 
 ### Added
